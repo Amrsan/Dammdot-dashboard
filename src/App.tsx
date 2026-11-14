@@ -6,6 +6,7 @@ import { Header } from './components/common/Header';
 import { Footer } from './components/common/Footer';
 import { AuthModal } from './components/auth/AuthModal';
 import { useLanguage } from './i18n/LanguageContext';
+import { stripBase, toPublicPath } from './lib/basePath';
 
 import { HomePage } from './pages/HomePage';
 import { ProductsPage } from './pages/ProductsPage';
@@ -32,7 +33,7 @@ const VALID_ROUTES = [
 
 const getInitialRouteState = () => {
   try {
-    const pathname = window.location.pathname || '/';
+    const pathname = stripBase(window.location.pathname || '/');
     const searchParams = new URLSearchParams(window.location.search);
     const params: any = {};
     searchParams.forEach((val, key) => {
@@ -267,9 +268,9 @@ export default function App() {
     // Push or replace state in window.history for browser Back/Forward integration
     try {
       if (options?.replace) {
-        window.history.replaceState({ route, params: params || {} }, '', targetUrl);
+        window.history.replaceState({ route, params: params || {} }, '', toPublicPath(targetUrl));
       } else if (!isSameAsLast) {
-        window.history.pushState({ route, params: params || {} }, '', targetUrl);
+        window.history.pushState({ route, params: params || {} }, '', toPublicPath(targetUrl));
       }
     } catch {}
 
@@ -294,7 +295,7 @@ export default function App() {
         if (str) qs = `?${str}`;
       }
       try {
-        window.history.replaceState({ route: prev.route, params: prev.params || {} }, '', `${prev.route}${qs}`);
+        window.history.replaceState({ route: prev.route, params: prev.params || {} }, '', toPublicPath(`${prev.route}${qs}`));
       } catch {}
       setCurrentRoute(prev.route);
       setRouteParams(prev.params || {});

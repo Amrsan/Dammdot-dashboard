@@ -71,6 +71,35 @@ npm start          # node dist/server.cjs (port 3000)
 The console is part of the same SPA and is lazy-loaded at `/admin/*`. Any static host must rewrite
 unknown paths to `index.html`; `server.ts` already does this (`app.get('*')`).
 
+## 4a. Deploying the storefront to GitHub Pages
+
+GitHub Pages only serves static files, so it hosts the browser app (storefront + console UI) and
+talks to Supabase directly. It cannot host `server.ts`; the Paymob endpoints in `server.ts` need
+separate Node hosting (see section 6).
+
+- Pages URL: `https://<owner>.github.io/Dammdot-dashboard/`
+- The Vite `base` is applied only in the `pages` build mode, so the Express build stays at `/`:
+
+  ```
+  npm run build:pages
+  ```
+
+  This writes `dist/` with `/Dammdot-dashboard/` asset URLs, plus `dist/404.html` (SPA deep-link
+  fallback) and `dist/.nojekyll`.
+- `.github/workflows/deploy-pages.yml` runs on every push to `main`: `npm ci` → `npm run lint` →
+  `npm run build:pages` → upload `dist` → deploy.
+- Repository → Settings → Pages → **Source** must be **GitHub Actions** (not a branch).
+- Optional repository variables (Settings → Secrets and variables → Actions → Variables):
+  `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`. They are public values; never add
+  `PAYMOB_SECRET_KEY`, `PAYMOB_HMAC_SECRET` or a service-role key here.
+
+## 4b. Database schema required by the console
+
+The console expects the base schema in `src/services/supabaseSchema.ts` and the additive
+`migrations/002_admin_dashboard.sql`. Apply both before using `/admin`; without them the dashboard
+logs PostgREST errors (`products.active`, `admin_notifications`, `delivery_addresses`,
+`orders.manual_delivery_address`).
+
 ## 5. Verification after deploy
 
 1. `GET /admin` shows the sign-in screen, not the storefront.
@@ -80,3 +109,11 @@ unknown paths to `index.html`; `server.ts` already does this (`app.get('*')`).
    page shows the new status.
 5. Edit an area fee in `/admin/delivery` → the storefront checkout recalculates with it.
 6. Sign in with a `viewer` account → write buttons are disabled and the API rejects writes.
+
+## 6. Backend-dependent features on GitHub Pages
+
+`/api/paymob/config`, `/api/paymob/create-intention` and `/api/paymob/webhook` live in `server.ts`.
+On GitHub Pages those URLs return 404, so online card payments cannot complete there. Cash on
+Delivery, catalog browsing, accounts and orders (via Supabase) work without the Node backend.
+To enable Paymob in production, host `dist/server.cjs` (built by `npm run build`) on a Node host,
+point a reverse proxy at it, and serve the SPA from the same origin.

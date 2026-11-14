@@ -3,8 +3,12 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 import {defineConfig} from 'vite';
 
-export default defineConfig(() => {
+export default defineConfig(({ mode }) => {
   return {
+    // GitHub Pages serves project sites from https://<user>.github.io/<repo>/.
+    // Only the `pages` build mode uses that subdirectory; the regular build
+    // (Express/self-hosting) and the dev server stay at the domain root.
+    base: mode === 'pages' ? process.env.VITE_BASE_PATH || '/Dammdot-dashboard/' : '/',
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {

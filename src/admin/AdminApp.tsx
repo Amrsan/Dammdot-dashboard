@@ -5,6 +5,7 @@ import { restoreSession, signOut, fetchNotifications } from './data/adminApi';
 import type { AdminSession, Permission } from './lib/types';
 import { permissionsForRole } from './lib/permissions';
 import { isSupabaseConfigured } from '../services/supabase';
+import { stripBase, toPublicPath } from '../lib/basePath';
 import { AdminLayout, ADMIN_ROUTES } from './components/AdminLayout';
 import { PermissionDenied, ToastProvider } from './components/ui';
 import { LoginPage } from './pages/LoginPage';
@@ -24,7 +25,7 @@ import { StaffPage } from './pages/StaffPage';
 import { SettingsPage } from './pages/SettingsPage';
 
 const normalize = (pathname: string) => {
-  let path = pathname.replace(/\/+$/, '');
+  let path = stripBase(pathname).replace(/\/+$/, '');
   if (!path.startsWith('/admin')) path = '/admin';
   return path || '/admin';
 };
@@ -45,7 +46,7 @@ const AdminShell: React.FC = () => {
         if (cancelled) return;
         setSession(restored);
         if (!restored && normalize(window.location.pathname) === '/admin') {
-          window.history.replaceState({}, '', '/admin');
+          window.history.replaceState({}, '', toPublicPath('/admin'));
         }
       })
       .catch(() => setSession(null))
@@ -69,15 +70,16 @@ const AdminShell: React.FC = () => {
   useEffect(() => {
     if (!session) return;
     if (normalize(window.location.pathname) === '/admin') {
-      window.history.replaceState({ route: ADMIN_ROUTES.dashboard }, '', ADMIN_ROUTES.dashboard);
+      window.history.replaceState({ route: ADMIN_ROUTES.dashboard }, '', toPublicPath(ADMIN_ROUTES.dashboard));
       setPath(ADMIN_ROUTES.dashboard);
     }
   }, [session]);
 
   const navigate = useCallback((next: string, options?: { replace?: boolean }) => {
     const url = new URL(next, window.location.origin);
-    if (options?.replace) window.history.replaceState({ route: url.pathname }, '', url.pathname + url.search);
-    else window.history.pushState({ route: url.pathname }, '', url.pathname + url.search);
+    const publicUrl = toPublicPath(url.pathname) + url.search;
+    if (options?.replace) window.history.replaceState({ route: url.pathname }, '', publicUrl);
+    else window.history.pushState({ route: url.pathname }, '', publicUrl);
     setPath(normalize(url.pathname));
     setSearchParams(new URLSearchParams(url.search));
     window.scrollTo({ top: 0 });
@@ -103,7 +105,7 @@ const AdminShell: React.FC = () => {
   const handleLogout = async () => {
     await signOut();
     setSession(null);
-    window.history.replaceState({}, '', '/admin');
+    window.history.replaceState({}, '', toPublicPath('/admin'));
     setPath('/admin');
   };
 
