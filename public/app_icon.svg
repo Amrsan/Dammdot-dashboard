@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <!-- Background -->
+  <rect width="512" height="512" rx="100" fill="#ffffff"/>
+
+  <!-- Globe Background (subtle map continents) -->
+  <g transform="translate(0,0)">
+    <!-- Globe base circle in ultra light grey -->
+    <circle cx="256" cy="256" r="130" fill="#f8fafc" />
+
+    <!-- Map landmasses (soft grey) clipped inside circle -->
+    <g clip-path="url(#globeClip2)">
+      <circle cx="256" cy="256" r="130" fill="#f1f5f9" />
+      <!-- North America & Europe outline -->
+      <path d="M160,200 Q180,185 210,180 Q235,165 250,150 Q280,145 310,165 Q330,190 350,195 Q365,220 340,240 Q310,230 280,245 Q260,230 240,245 Q210,240 180,250 Z" fill="#cbd5e1" opacity="0.9" />
+      <!-- Eurasia & Middle East & Africa -->
+      <path d="M290,170 Q320,160 350,180 Q375,205 385,240 Q380,270 355,300 Q330,330 300,350 Q285,355 275,340 Q280,310 260,290 Q270,260 250,230 Q275,210 290,170 Z" fill="#cbd5e1" opacity="0.9" />
+      <!-- South America -->
+      <path d="M200,275 Q235,270 245,290 Q250,330 235,370 Q225,395 215,385 Q205,350 195,320 Q190,290 200,275 Z" fill="#cbd5e1" opacity="0.9" />
+      <!-- Additional subtle islands -->
+      <circle cx="320" cy="210" r="8" fill="#cbd5e1" opacity="0.9" />
+      <circle cx="340" cy="235" r="6" fill="#cbd5e1" opacity="0.9" />
+    </g>
+  </g>
+
+  <!-- Globe Clip Path -->
+  <defs>
+    <clipPath id="globeClip2">
+      <circle cx="256" cy="256" r="130" />
+    </clipPath>
+    <linearGradient id="dropGrad2" x1="0.3" y1="0" x2="0.7" y2="1">
+      <stop offset="0%" stop-color="#ef233c" />
+      <stop offset="60%" stop-color="#dc143c" />
+      <stop offset="100%" stop-color="#b7091d" />
+    </linearGradient>
+  </defs>
+
+  <!-- Dashed Circular Orbital Line -->
+  <circle cx="256" cy="256" r="148" fill="none" stroke="#e11d24" stroke-width="7.5" stroke-dasharray="14 12" stroke-linecap="round" />
+
+  <!-- Two Stylized Red Hands (Yin-Yang Nurturing Embrace) -->
+  <!-- Hand 1: Top-Right Arc Hand -->
+  <path d="M258,74 C305,74 346,90 382,122 C400,138 418,162 426,190 C432,212 430,232 422,242 C412,254 396,252 388,238 C382,228 382,210 386,192 C389,178 388,168 376,152 C362,134 340,120 312,112 C288,105 264,107 248,109 C238,110 236,104 240,96 C245,86 250,74 258,74 Z" fill="#e11d24" />
+  <path d="M388,238 C385,215 378,198 362,176 C350,160 334,148 316,140 C306,135 310,126 322,128 C344,133 368,148 384,170 C398,190 404,212 396,236 C394,242 390,242 388,238 Z" fill="#e11d24" />
+
+  <!-- Hand 2: Bottom-Left Arc Hand -->
+  <path d="M254,438 C207,438 166,422 130,390 C112,374 94,350 86,322 C80,300 82,280 90,270 C100,258 116,260 124,274 C130,284 130,302 126,320 C123,334 124,344 136,360 C150,378 172,392 200,400 C224,407 248,405 264,403 C274,402 276,408 272,416 C267,426 262,438 254,438 Z" fill="#e11d24" />
+  <path d="M124,274 C127,297 134,314 150,336 C162,352 178,364 196,372 C206,377 202,386 190,384 C168,379 144,364 128,342 C114,322 108,300 116,276 C118,270 122,270 124,274 Z" fill="#e11d24" />
+
+  <!-- Center Blood Droplet -->
+  <path d="M256,144 C256,144 326,248 326,306 C326,346 295,366 256,366 C217,366 186,346 186,306 C186,248 256,144 256,144 Z" fill="#990012" opacity="0.15" transform="translate(0, 4)" />
+  <path d="M256,144 C256,144 324,248 324,304 C324,342 294,364 256,364 C218,364 188,342 188,304 C188,248 256,144 256,144 Z" fill="url(#dropGrad2)" />
+
+  <!-- Specular Reflection / Highlight on Droplet Left Edge -->
+  <path d="M246,182 C240,205 218,245 208,275 C202,295 202,315 210,312 C216,310 216,295 222,275 C230,248 248,212 254,188 C256,180 250,174 246,182 Z" fill="#ffffff" opacity="0.82" />
+  <ellipse cx="242" cy="226" rx="5.5" ry="16" transform="rotate(-20 242 226)" fill="#ffffff" opacity="0.5" />
+</svg>

@@ -1,0 +1,6 @@
+{
+  "name": "damdot",
+  "description": "منصة وشبكة طبية ذكية لطلب والبحث عن أكياس الدم ومكوناته وتوصيلها للمرضى والمستشفيات من بنوك الدم المعتمدة.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
