@@ -100,6 +100,10 @@ The console expects the base schema in `src/services/supabaseSchema.ts` and the 
 logs PostgREST errors (`products.active`, `admin_notifications`, `delivery_addresses`,
 `orders.manual_delivery_address`).
 
+`migrations/003_reconcile_schema.sql` adds the two storefront columns the console reads
+(`orders.manual_delivery_address`, `products.active`). The console also selects `*` so it keeps
+rendering live data if the deployed schema is still behind.
+
 ## 5. Verification after deploy
 
 1. `GET /admin` shows the sign-in screen, not the storefront.

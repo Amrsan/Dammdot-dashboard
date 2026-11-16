@@ -146,8 +146,11 @@ export async function fetchAuditLogs(limit = 25): Promise<AuditLogEntry[]> {
 
 /* ------------------------------- orders --------------------------- */
 
-const ORDER_COLUMNS =
-  'id,order_number,user_id,customer_name,customer_email,customer_phone,patient_name,patient_age,hospital_name,department,blood_type,product_type_id,product_type_name,product_id,product_name,quantity,unit_price,subtotal,delivery_fee,total,payment_method,payment_status,order_status,paymob_transaction_id,paymob_order_id,notes,internal_notes,governorate_id,governorate_name,city_id,city_name,area_id,area_name,delivery_address,manual_delivery_address,delivery_building,delivery_apartment,delivery_floor,delivery_landmark,delivery_phone,created_at,updated_at';
+// Select every column instead of a fixed list: the deployed app must keep
+// working when the live database schema lags behind (for example a newly added
+// column such as orders.manual_delivery_address). PostgREST returns all columns
+// and the console maps only the fields it knows about.
+const ORDER_COLUMNS = '*';
 
 export interface OrderFilters {
   search?: string;
@@ -536,10 +539,19 @@ export async function fetchDashboard(range: DateRange): Promise<DashboardData> {
       let { data, error } = await query;
       if (error) {
         console.error('Dashboard orders error:', error);
-        // Try without date filters
-        const retry = await supabase.from('orders').select(ORDER_COLUMNS).order('created_at', { ascending: false }).limit(1000);
-        if (retry.error) throw retry.error;
-        data = retry.data;
+        // The remote schema can lag behind the app (for example a column that
+        // exists in ORDER_COLUMNS but not yet in the database). Fall back to
+        // SELECT * with the same date range so the dashboard still renders.
+        let retry = supabase
+          .from('orders')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(1000);
+        if (range.from) retry = retry.gte('created_at', range.from);
+        if (range.to) retry = retry.lte('created_at', range.to);
+        const retryRes = await retry;
+        if (retryRes.error) throw retryRes.error;
+        data = retryRes.data;
       }
 
       let profilesQuery = supabase.from('profiles').select('created_at').limit(1000);
