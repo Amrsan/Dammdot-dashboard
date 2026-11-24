@@ -283,49 +283,8 @@ DROP POLICY IF EXISTS "Anyone can insert status history" ON public.order_status_
 CREATE POLICY "Anyone can insert status history" ON public.order_status_history FOR INSERT WITH CHECK (true);
 
 -- ====================================================================
--- AUTOMATIC INVENTORY MANAGEMENT TRIGGER
--- ====================================================================
-CREATE OR REPLACE FUNCTION public.handle_order_inventory()
-RETURNS TRIGGER AS $$
-BEGIN
-  -- When order status transitions to 'Confirmed', decrement available stock
-  IF NEW.order_status = 'Confirmed' AND OLD.order_status <> 'Confirmed' THEN
-    IF NEW.product_id IS NOT NULL THEN
-      UPDATE public.products
-      SET stock_quantity = GREATEST(0, stock_quantity - NEW.quantity),
-          availability = CASE 
-            WHEN stock_quantity - NEW.quantity <= 0 THEN 'Out of Stock'::product_availability
-            WHEN stock_quantity - NEW.quantity <= 5 THEN 'Limited Stock'::product_availability
-            ELSE 'In Stock'::product_availability
-          END,
-          updated_at = NOW()
-      WHERE id = NEW.product_id;
-    END IF;
-  END IF;
-
-  -- When confirmed order is cancelled, restore stock
-  IF NEW.order_status = 'Cancelled' AND OLD.order_status = 'Confirmed' THEN
-    IF NEW.product_id IS NOT NULL THEN
-      UPDATE public.products
-      SET stock_quantity = stock_quantity + NEW.quantity,
-          availability = CASE 
-            WHEN stock_quantity + NEW.quantity > 5 THEN 'In Stock'::product_availability
-            ELSE 'Limited Stock'::product_availability
-          END,
-          updated_at = NOW()
-      WHERE id = NEW.product_id;
-    END IF;
-  END IF;
-
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
+-- Sourcing requests do not change stock.
 DROP TRIGGER IF EXISTS trg_order_inventory ON public.orders;
-CREATE TRIGGER trg_order_inventory
-AFTER UPDATE ON public.orders
-FOR EACH ROW
-EXECUTE FUNCTION public.handle_order_inventory();
 
 -- ====================================================================
 -- SEED DATA INITIALIZATION
@@ -438,7 +397,6 @@ INSERT INTO public.products (id, name, description, blood_type, product_type_id,
 ON CONFLICT (id) DO UPDATE SET
   name = EXCLUDED.name,
   description = EXCLUDED.description,
-  price = EXCLUDED.price,
   stock_quantity = EXCLUDED.stock_quantity,
   availability = EXCLUDED.availability,
   image_url = EXCLUDED.image_url;

@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../services/db';
-import { Product, ProductTypeItem, BloodTypeGroup } from '../types';
+import { productCategory } from '../services/productCatalog';
+import type { Product } from '../types';
 import { ProductCard } from '../components/products/ProductCard';
 import { ProductFilter, ProductFilterState } from '../components/products/ProductFilter';
-import { ShieldCheck, Sparkles, AlertCircle, HeartPulse, Filter, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Filter, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useLanguage } from '../i18n/LanguageContext';
 
 interface ProductsPageProps {
@@ -16,71 +17,37 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
   onBackHome,
 }) => {
   const [products, setProducts] = useState<Product[]>([]);
-  const [productTypes, setProductTypes] = useState<ProductTypeItem[]>([]);
-  const [bloodTypes, setBloodTypes] = useState<{ name: BloodTypeGroup; active: boolean }[]>([]);
   const { language, t, isRTL } = useLanguage();
   const BackChevron = isRTL ? ChevronRight : ChevronLeft;
 
   const initialFilter: ProductFilterState = {
     search: '',
-    bloodType: 'all',
-    productType: 'all',
-    availability: 'all',
     sortBy: 'newest',
   };
 
   const [filterState, setFilterState] = useState<ProductFilterState>(initialFilter);
 
   const loadData = () => {
-    setProducts(db.getProducts());
-    setProductTypes(db.getProductTypes());
-    setBloodTypes(db.getBloodTypes());
+    setProducts(db.getCatalogProducts());
   };
 
   useEffect(() => {
     loadData();
     const unsub = db.subscribe(loadData);
+    void db.pullCatalogFromSupabase();
     return () => unsub();
   }, []);
 
   // Filter and sort products
   const filteredProducts = products.filter((p) => {
+    if (productCategory(p) === 'phlebotomy') return false;
     // Search match
     if (filterState.search.trim()) {
       const q = filterState.search.toLowerCase();
       const matchName = p.name.toLowerCase().includes(q);
       const matchDesc = p.description.toLowerCase().includes(q);
-      const matchBlood = p.blood_type.toLowerCase().includes(q);
       const matchType = (p.product_type_name || '').toLowerCase().includes(q);
-      if (!matchName && !matchDesc && !matchBlood && !matchType) return false;
-    }
-
-    // Blood type match
-    if (filterState.bloodType !== 'all' && p.blood_type !== filterState.bloodType) {
-      return false;
-    }
-
-    // Product type match
-    if (filterState.productType !== 'all' && p.product_type_id !== filterState.productType) {
-      return false;
-    }
-
-    // Availability match
-    if (filterState.availability !== 'all' && p.availability !== filterState.availability) {
-      return false;
-    }
-
-    // Do not display products for inactive categories (e.g. phlebotomy removed for now)
-    const matchedType = productTypes.find((pt) => pt.id === p.product_type_id);
-    if (matchedType && !matchedType.active) {
-      return false;
-    }
-    if (
-      p.product_type_id === 'pt-phlebotomy' ||
-      p.name?.toLowerCase().includes('phlebotom') ||
-      p.name?.includes('فصد')
-    ) {
-      return false;
+      if (!matchName && !matchDesc && !matchType) return false;
     }
 
     return true;
@@ -91,7 +58,7 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
     if (filterState.sortBy === 'price-asc') return a.price - b.price;
     if (filterState.sortBy === 'price-desc') return b.price - a.price;
     if (filterState.sortBy === 'name') return a.name.localeCompare(b.name);
-    return 0; // newest/featured
+    return b.created_at.localeCompare(a.created_at);
   });
 
   return (
@@ -114,34 +81,15 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
           <span>{language === 'ar' ? 'العودة للرئيسية' : 'Back to Home'}</span>
         </button>
 
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-red-100 text-red-700 text-xs font-bold">
-          <HeartPulse className="w-3.5 h-3.5 text-red-600" />
-          <span>{language === 'ar' ? 'قائمة الفصائل والمنتجات' : 'Products & Blood Types'}</span>
-        </div>
       </div>
 
-      {/* Page Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 pb-6">
-        <div>
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-red-50 text-red-700 border border-red-200 text-xs font-bold uppercase tracking-wider mb-2">
-            <HeartPulse className="w-3.5 h-3.5" />
-            <span>{language === 'ar' ? 'مخزون بيولوجي معتمد' : 'Accredited Biological Inventory'}</span>
-          </div>
-          <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
-            {t('productsPageTitle')}
-          </h1>
-          <p className="text-xs sm:text-sm text-slate-500 mt-1 max-w-2xl">
-            {t('productsPageSubtitle')}
-          </p>
-        </div>
-
-        <div className="flex items-center gap-3 text-xs text-slate-600 bg-slate-50 p-3 rounded-xl border border-slate-200 shrink-0">
-          <ShieldCheck className="w-5 h-5 text-emerald-600 shrink-0" />
-          <div>
-            <span className="font-bold text-slate-800 block">{t('temperatureControlled')}</span>
-            <span>{t('temperatureRange')}</span>
-          </div>
-        </div>
+      <div className="border-b border-slate-200 pb-6">
+        <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
+          {t('productsPageTitle')}
+        </h1>
+        <p className="text-sm text-slate-600 mt-1 max-w-2xl">
+          {t('productsPageSubtitle')}
+        </p>
       </div>
 
       {/* Filter Component */}
@@ -149,8 +97,6 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
         filterState={filterState}
         onChange={(updates) => setFilterState((prev) => ({ ...prev, ...updates }))}
         onReset={() => setFilterState(initialFilter)}
-        productTypes={productTypes}
-        bloodTypes={bloodTypes}
       />
 
       {/* Products Grid & Results Counter */}

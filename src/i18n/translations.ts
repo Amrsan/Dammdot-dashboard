@@ -104,12 +104,12 @@ export const translations = {
     viewAllProducts: 'View Complete Blood Inventory',
 
     // Products Page
-    productsPageTitle: 'Blood Products & Cold-Chain Inventory',
+    productsPageTitle: 'Blood Product Sourcing',
     productsPageSubtitle:
-      'Certified packed red cells, whole blood, irradiated units, and specialized clinical transfusion components.',
+      'Choose the product you need. We search for it through blood banks and arrange delivery to the patient.',
     temperatureControlled: 'Temperature Controlled',
     temperatureRange: '2°C – 6°C continuous sensor logging',
-    searchPlaceholder: 'Search blood product, type, or notes...',
+    searchPlaceholder: 'Search by product name or type…',
     allBloodTypes: 'All Blood Types',
     allProductTypes: 'All Product Types',
     allAvailability: 'All Availability',
@@ -432,12 +432,12 @@ export const translations = {
     viewAllProducts: 'استعراض كامل مخزون الدم المتاح',
 
     // Products Page
-    productsPageTitle: 'مخزون منتجات الدم وسلسلة التبريد',
+    productsPageTitle: 'توفير منتجات الدم',
     productsPageSubtitle:
-      'كرات دم حمراء مكثفة، دم كامل، أكياس دم مشععة، ومكونات نقل دم سريرية معتمدة.',
+      'اختر المنتج المطلوب. نبحث عنه لدى بنوك الدم ونرتب توصيله إلى المريض.',
     temperatureControlled: 'تحت مراقبة حرارية مشددة',
     temperatureRange: 'تسجيل حراري مستمر بين 2° مئوية إلى 6° مئوية',
-    searchPlaceholder: 'ابحث باسم المنتج، الفصيلة، أو الملاحظات...',
+    searchPlaceholder: 'ابحث باسم المنتج أو نوعه…',
     allBloodTypes: 'جميع فصائل الدم',
     allProductTypes: 'جميع أنواع المنتجات',
     allAvailability: 'جميع حالات التوافر',

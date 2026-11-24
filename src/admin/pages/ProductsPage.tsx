@@ -1,13 +1,13 @@
 import React, { useMemo, useState } from 'react';
 import { Pencil, Plus, Power, Search } from 'lucide-react';
 import { useAdminI18n } from '../lib/i18n';
-import { fetchProducts, fetchProductTypes, saveProduct, setProductActive, type ProductInput } from '../data/adminApi';
+import { fetchCatalogProducts, fetchProductTypes, saveProduct, setProductActive, type ProductInput } from '../data/adminApi';
+import { catalogProductKey } from '../../services/productCatalog';
 import type { Product, ProductTypeItem } from '../../types';
 import { useAsync } from '../lib/useAsync';
 import { currency, formatDate } from '../lib/format';
 import { DataTable, type Column } from '../components/DataTable';
 import {
-  AvailabilityBadge,
   Badge,
   Button,
   Card,
@@ -20,21 +20,15 @@ import {
   Textarea,
   useToast,
   Input,
-  cn,
 } from '../components/ui';
 import type { AdminSession } from '../lib/types';
 
-const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-', 'A', 'B', 'AB', 'O'];
-const AVAILABILITY = ['In Stock', 'Limited Stock', 'Out of Stock'];
 
 const emptyProduct = (): ProductInput => ({
   name: '',
   description: '',
-  blood_type: 'O+',
   product_type_id: '',
   price: 0,
-  stock_quantity: 0,
-  availability: 'In Stock',
   image_url: '',
 });
 
@@ -51,12 +45,18 @@ export const ProductsPage: React.FC<{ session: AdminSession }> = ({ session }) =
   const [toggleTarget, setToggleTarget] = useState<Product | null>(null);
   const [toggling, setToggling] = useState(false);
 
-  const products = useAsync(() => fetchProducts(), []);
+  const products = useAsync(() => fetchCatalogProducts(), []);
   const types = useAsync<ProductTypeItem[]>(() => fetchProductTypes(), []);
 
-  const productsHaveActiveFlag = useMemo(
-    () => (products.data || []).some((p) => Object.prototype.hasOwnProperty.call(p, 'active')),
-    [products.data]
+  const needsMigration = products.data?.some((product) => product.blood_type !== null);
+  const canEditListing = canWrite && !needsMigration && Boolean(products.data);
+  const listedKeys = new Set((products.data || []).map((product) =>
+    catalogProductKey(product.product_type_id, product.product_type_name)
+  ));
+  const listedTypeIds = new Set((products.data || []).map((product) => product.product_type_id));
+  const listedTypes = (types.data || []).filter((type) => listedTypeIds.has(type.id));
+  const availableTypes = (types.data || []).filter((type) =>
+    type.active && !listedKeys.has(catalogProductKey(type.id, type.name))
   );
 
   const filtered = useMemo(() => {
@@ -66,16 +66,14 @@ export const ProductsPage: React.FC<{ session: AdminSession }> = ({ session }) =
       rows = rows.filter(
         (p) =>
           p.name.toLowerCase().includes(q) ||
-          p.description?.toLowerCase().includes(q) ||
-          p.blood_type.toLowerCase().includes(q)
+          p.description?.toLowerCase().includes(q)
       );
     }
     if (typeFilter !== 'all') rows = rows.filter((p) => p.product_type_id === typeFilter);
     return rows;
   }, [products.data, search, typeFilter]);
 
-  const isActive = (p: Product) =>
-    Object.prototype.hasOwnProperty.call(p, 'active') ? Boolean((p as Product & { active?: boolean }).active) : p.availability !== 'Out of Stock';
+  const isActive = (product: Product) => product.active !== false;
 
   const startEdit = (product: Product) => {
     setFormError(null);
@@ -84,11 +82,8 @@ export const ProductsPage: React.FC<{ session: AdminSession }> = ({ session }) =
       input: {
         name: product.name,
         description: product.description || '',
-        blood_type: product.blood_type,
         product_type_id: product.product_type_id,
         price: Number(product.price || 0),
-        stock_quantity: Number(product.stock_quantity || 0),
-        availability: product.availability,
         image_url: product.image_url || '',
       },
     });
@@ -98,7 +93,7 @@ export const ProductsPage: React.FC<{ session: AdminSession }> = ({ session }) =
     setFormError(null);
     setEditing({
       product: null,
-      input: { ...emptyProduct(), product_type_id: types.data?.find((x) => x.active)?.id || types.data?.[0]?.id || '' },
+      input: { ...emptyProduct(), product_type_id: availableTypes[0]?.id || '' },
     });
   };
 
@@ -181,40 +176,10 @@ export const ProductsPage: React.FC<{ session: AdminSession }> = ({ session }) =
         ),
       },
       {
-        key: 'blood',
-        header: t('products.colBlood'),
-        align: 'center',
-        render: (p) => (
-          <span className="inline-flex min-w-8 items-center justify-center rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[11px] font-bold text-slate-700">
-            {p.blood_type}
-          </span>
-        ),
-      },
-      {
         key: 'price',
         header: t('products.colPrice'),
         align: 'end',
         render: (p) => <span className="font-semibold tabular-nums text-slate-800">{currency(Number(p.price), locale)}</span>,
-      },
-      {
-        key: 'stock',
-        header: t('products.colStock'),
-        align: 'center',
-        render: (p) => (
-          <span
-            className={cn(
-              'tabular-nums',
-              Number(p.stock_quantity) === 0 ? 'font-semibold text-red-600' : 'text-slate-700'
-            )}
-          >
-            {p.stock_quantity}
-          </span>
-        ),
-      },
-      {
-        key: 'availability',
-        header: t('products.colAvailability'),
-        render: (p) => <AvailabilityBadge value={p.availability} />,
       },
       {
         key: 'status',
@@ -250,7 +215,7 @@ export const ProductsPage: React.FC<{ session: AdminSession }> = ({ session }) =
             <Button
               size="sm"
               variant="ghost"
-              disabled={!canWrite}
+              disabled={!canEditListing}
               onClick={() => startEdit(p)}
               icon={<Pencil className="h-3.5 w-3.5" />}
               aria-label={t('common.edit')}
@@ -258,7 +223,7 @@ export const ProductsPage: React.FC<{ session: AdminSession }> = ({ session }) =
             <Button
               size="sm"
               variant="ghost"
-              disabled={!canWrite}
+              disabled={!canEditListing}
               onClick={() => setToggleTarget(p)}
               icon={<Power className="h-3.5 w-3.5" />}
               aria-label={isActive(p) ? t('products.deactivate') : t('products.activate')}
@@ -267,7 +232,7 @@ export const ProductsPage: React.FC<{ session: AdminSession }> = ({ session }) =
         ),
       },
     ],
-    [canWrite, locale, t, types.data]
+    [canEditListing, locale, t, types.data]
   );
 
   return (
@@ -276,7 +241,7 @@ export const ProductsPage: React.FC<{ session: AdminSession }> = ({ session }) =
         title={t('products.title')}
         subtitle={t('products.subtitle')}
         actions={
-          canWrite ? (
+          canEditListing && availableTypes.length > 0 ? (
             <Button size="sm" variant="primary" onClick={startCreate} icon={<Plus className="h-3.5 w-3.5" />}>
               {t('products.add')}
             </Button>
@@ -284,7 +249,7 @@ export const ProductsPage: React.FC<{ session: AdminSession }> = ({ session }) =
         }
       />
 
-      {!productsHaveActiveFlag && !products.loading ? (
+      {needsMigration && !products.loading ? (
         <div className="mb-3">
           <InlineNotice tone="info">{t('products.migrationBanner')}</InlineNotice>
         </div>
@@ -304,7 +269,7 @@ export const ProductsPage: React.FC<{ session: AdminSession }> = ({ session }) =
           <option value="all">
             {t('products.colType')} · {t('common.all')}
           </option>
-          {(types.data || []).map((type) => (
+          {listedTypes.map((type) => (
             <option key={type.id} value={type.id}>
               {type.name}
             </option>
@@ -325,7 +290,7 @@ export const ProductsPage: React.FC<{ session: AdminSession }> = ({ session }) =
         emptyTitle={t('products.empty')}
         emptyDescription={t('products.emptyHint')}
         emptyAction={
-          canWrite && !search && typeFilter === 'all' ? (
+          canEditListing && availableTypes.length > 0 && !search && typeFilter === 'all' ? (
             <Button size="sm" onClick={startCreate} icon={<Plus className="h-3.5 w-3.5" />}>
               {t('products.add')}
             </Button>
@@ -371,33 +336,17 @@ export const ProductsPage: React.FC<{ session: AdminSession }> = ({ session }) =
               <Field label={t('products.type')} required>
                 <Select
                   value={editing.input.product_type_id}
+                  disabled={Boolean(editing.product)}
                   onChange={(e) =>
                     setEditing({ ...editing, input: { ...editing.input, product_type_id: e.target.value } })
                   }
                   required
                 >
                   <option value="">—</option>
-                  {(types.data || []).map((type) => (
+                  {(editing.product ? types.data || [] : availableTypes).map((type) => (
                     <option key={type.id} value={type.id}>
                       {type.name}
                       {type.active ? '' : ' (inactive)'}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-              <Field label={t('products.bloodType')} required>
-                <Select
-                  value={editing.input.blood_type}
-                  onChange={(e) =>
-                    setEditing({
-                      ...editing,
-                      input: { ...editing.input, blood_type: e.target.value as ProductInput['blood_type'] },
-                    })
-                  }
-                >
-                  {BLOOD_GROUPS.map((group) => (
-                    <option key={group} value={group}>
-                      {group}
                     </option>
                   ))}
                 </Select>
@@ -412,33 +361,6 @@ export const ProductsPage: React.FC<{ session: AdminSession }> = ({ session }) =
                     setEditing({ ...editing, input: { ...editing.input, price: Number(e.target.value) } })
                   }
                 />
-              </Field>
-              <Field label={t('products.stock')}>
-                <Input
-                  type="number"
-                  min={0}
-                  value={editing.input.stock_quantity}
-                  onChange={(e) =>
-                    setEditing({ ...editing, input: { ...editing.input, stock_quantity: Number(e.target.value) } })
-                  }
-                />
-              </Field>
-              <Field label={t('products.availability')}>
-                <Select
-                  value={editing.input.availability}
-                  onChange={(e) =>
-                    setEditing({
-                      ...editing,
-                      input: { ...editing.input, availability: e.target.value as ProductInput['availability'] },
-                    })
-                  }
-                >
-                  {AVAILABILITY.map((value) => (
-                    <option key={value} value={value}>
-                      {value}
-                    </option>
-                  ))}
-                </Select>
               </Field>
               <Field label={t('products.imageUrl')}>
                 <Input

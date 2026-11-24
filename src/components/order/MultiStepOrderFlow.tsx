@@ -36,9 +36,7 @@ import {
 } from 'lucide-react';
 import {
   BloodTypeGroup,
-  BloodProductOption,
   ProductCategoryKey,
-  Product,
   ProductTypeItem,
   Governorate,
   City,
@@ -48,12 +46,14 @@ import {
   UserProfile,
 } from '../../types';
 import { db } from '../../services/db';
+import { catalogProductKey, productCategory } from '../../services/productCatalog';
 import { paymentService } from '../../services/payment';
 import { PaymobUnifiedCheckoutModal } from '../checkout/PaymobUnifiedCheckoutModal';
 import { useLanguage } from '../../i18n/LanguageContext';
 
 interface MultiStepOrderFlowProps {
   initialProductId?: string;
+  initialBloodType?: BloodTypeGroup;
   initialCategory?: ProductCategoryKey;
   onOrderCompleted: (order: Order) => void;
   onNavigateProducts: () => void;
@@ -84,208 +84,6 @@ const ABO_PLATELETS_GROUPS: { type: BloodTypeGroup; badgeEn: string; badgeAr: st
   { type: 'B', badgeEn: 'Standard Match', badgeAr: 'متوافقة' },
   { type: 'AB', badgeEn: 'Universal Match', badgeAr: 'توافق واسع' },
   { type: 'O', badgeEn: 'Standard Match', badgeAr: 'متوافقة' },
-];
-
-const BLOOD_OPTIONS: {
-  id: BloodProductOption;
-  nameEn: string;
-  nameAr: string;
-  badgeEn: string;
-  badgeAr: string;
-  descEn: string;
-  descAr: string;
-  specEn: string;
-  specAr: string;
-  basePrice: number;
-}[] = [
-  {
-    id: 'Packed Red Blood',
-    nameEn: 'Packed Red Blood',
-    nameAr: 'دم مكدس (Packed Red Blood)',
-    badgeEn: 'Concentrated Erythrocytes (PRBC)',
-    badgeAr: 'كرات دم حمراء مركزة',
-    descEn: 'High-viability concentrated red blood cells for acute blood loss, trauma resuscitation, and surgical anemia.',
-    descAr: 'كرات دم حمراء مركزة قياسية لتعويض النزيف الحاد في العمليات الجراحية، والحوادث، وفقر الدم الشديد.',
-    specEn: 'SAGM/CPDA-1 preserved • Hct 55–65% • Stored at 2°C–6°C',
-    specAr: 'محلول حفظ SAGM • تركيز هيماتوكريت 55–65% • حفظ مبرد 2°–6° مئوية',
-    basePrice: 0,
-  },
-  {
-    id: 'Filtered Blood',
-    nameEn: 'Filtered Blood',
-    nameAr: 'دم مفلتر',
-    badgeEn: 'Micro-Filtered (<5×10⁶ WBC)',
-    badgeAr: 'مصفى مخبرياً من الكرات البيضاء',
-    descEn: 'Precision leukocyte-depleted cellular units preventing febrile non-hemolytic transfusion reactions and HLA alloimmunization.',
-    descAr: 'دم مفلتر بمرشحات دقيقة لخفض الكرات البيضاء ومنع الحمى التحسسية وتكوين الأجسام المضادة وتجنب الفيروسات.',
-    specEn: 'Pre-storage filtration • Reduced CMV risk • Oncology & recurrent transfusion safe',
-    specAr: 'فلترة مسبقة قبل التخزين • حماية من الفيروسات • ملائم لمرضى الأورام ونقل الدم المتكرر',
-    basePrice: 0,
-  },
-  {
-    id: 'Irradiated Blood',
-    nameEn: 'Irradiated Blood',
-    nameAr: 'دم مشع (Irradiated Blood)',
-    badgeEn: '25-Gy Gamma / X-Ray Irradiated',
-    badgeAr: 'معالج إشعاعياً بجرعة 25 جراي',
-    descEn: '25-Gy irradiated cellular bags inactivating donor T-lymphocytes to strictly prevent Transfusion-Associated Graft-versus-Host Disease (TA-GvHD).',
-    descAr: 'وحدات خلوية مشععة مخبرياً لتعطيل الخلايا اللمفاوية التائية ومنع داء الطعم ضد المضيف الخطير لمرضى المناعة.',
-    specEn: 'Anti-TA-GvHD certified • Strict indicator badge • Immunocompromised & neonatal safe',
-    specAr: 'معتمد للوقاية من TA-GvHD • مؤشر إشعاعي ملصق • آمن لنقص المناعة والأطفال حديثي الولادة',
-    basePrice: 0,
-  },
-];
-
-const PLASMA_OPTIONS: {
-  id: BloodProductOption;
-  nameEn: string;
-  nameAr: string;
-  badgeEn: string;
-  badgeAr: string;
-  descEn: string;
-  descAr: string;
-  specEn: string;
-  specAr: string;
-  basePrice: number;
-}[] = [
-  {
-    id: 'Fresh Frozen Plasma',
-    nameEn: 'Fresh Frozen Plasma (FFP)',
-    nameAr: 'بلازما مجمدة حديثة (FFP)',
-    badgeEn: 'All Coagulation Factors',
-    badgeAr: 'عوامل التخثر كاملة (V & VIII)',
-    descEn: 'Deep-frozen plasma preserved within 8h of donation, rich in labile coagulation factors for active bleeding and coagulopathies.',
-    descAr: 'وحدة بلازما طازجة مجمدة بدرجة -18°C غنية بعوامل التجلط والألبومين لتعويض عوامل التخثر والنزيف الحاد وأمراض الكبد.',
-    specEn: '',
-    specAr: '',
-    basePrice: 0,
-  },
-];
-
-const PLATELETS_OPTIONS: {
-  id: BloodProductOption;
-  nameEn: string;
-  nameAr: string;
-  badgeEn: string;
-  badgeAr: string;
-  descEn: string;
-  descAr: string;
-  specEn: string;
-  specAr: string;
-  basePrice: number;
-}[] = [
-  {
-    id: 'Apheresis Platelets',
-    nameEn: 'Single-Donor (SDP)',
-    nameAr: 'صفائح دم (Single-Donor SDP)',
-    badgeEn: 'High Yield (≥3.0×10¹¹) • Single Donor',
-    badgeAr: 'متبرع واحد • تركيز عالٍ جداً',
-    descEn: 'Equivalent to 6 pooled whole-blood units from a single donor, minimizing HLA alloimmunization and transfusion reactions.',
-    descAr: 'وحدة صفائح مركزة مستخلصة من متبرع واحد بجهاز الفصل الخلوي، تعادل 6 وحدات عادية وتقلل من خطر تكون الأجسام المضادة.',
-    specEn: 'Continuous agitation at 20°C–24°C • 5-day viability • Cross-match safe',
-    specAr: 'رجاج مستمر 20°–24° مئوية • صلاحية 5 أيام • مطابقة سريعة',
-    basePrice: 0,
-  },
-  {
-    id: 'Random Donor Platelets',
-    nameEn: 'Random Donor (RDP)',
-    nameAr: 'صفائح دم (Random Donor RDP)',
-    badgeEn: 'Standard Whole-Blood Derived',
-    badgeAr: 'وحدة مركزة قياسية',
-    descEn: 'Platelet concentrate separated from whole blood units for rapid clinical response to acute bleeding and surgical support.',
-    descAr: 'وحدات صفائح مركزة مشتقة من أكياس الدم الكامل لعلاج حالات النزيف الحاد ونقص الصفائح الطارئة.',
-    specEn: 'Agitated 20°C–24°C storage • Bacterial screening negative',
-    specAr: 'حفظ مع الرج المستمر 20°–24° مئوية • فحص بكتيري معتمد',
-    basePrice: 0,
-  },
-];
-
-const PHLEBOTOMY_OPTIONS: {
-  id: BloodProductOption;
-  nameEn: string;
-  nameAr: string;
-  badgeEn: string;
-  badgeAr: string;
-  descEn: string;
-  descAr: string;
-  specEn: string;
-  specAr: string;
-  basePrice: number;
-}[] = [
-  {
-    id: 'Standard Phlebotomy',
-    nameEn: 'Standard 450ml Phlebotomy Session',
-    nameAr: 'جلسة فصد علاجي قياسية 450 مل',
-    badgeEn: '450ml Evacuation • Vital Monitoring',
-    badgeAr: 'سحب 450 مل • فحص علامات حيوية',
-    descEn: 'Therapeutic evacuation of 450ml blood under vital signs monitoring for Polycythemia Vera and high hematocrit control.',
-    descAr: 'إجراء سحب دم علاجي بحجم 450 مل تحت مراقبة العلامات الحيوية وضغط الدم لتخفيض لزوجة الدم لكثرة الحمر الحقيقية.',
-    specEn: 'Administered by certified medical staff • Pre/post hemoglobin & BP check',
-    specAr: 'تحت إشراف طبيب أو تمريض مؤهل • قياس هيموجلوبين وضغط • راحة سريرية',
-    basePrice: 0,
-  },
-  {
-    id: 'Saline-Replacement Phlebotomy',
-    nameEn: 'Saline-Replacement Phlebotomy',
-    nameAr: 'فصد علاجي مع تعويض محاليل ملحية',
-    badgeEn: 'Simultaneous 0.9% NaCl Infusion',
-    badgeAr: 'تسريب محلول ملحي متزامن',
-    descEn: 'Therapeutic phlebotomy paired with concurrent I.V. normal saline infusion to maintain hemodynamic stability.',
-    descAr: 'سحب دم علاجي متزامن مع تسريب وريدي لمحلول ملحي معقم للحفاظ على ضغط الدم وحجم الدورة الدموية لكبار السن.',
-    specEn: '500ml 0.9% Saline replacement • Cardiovascular safe • Zero dizzying protocol',
-    specAr: 'محلول ملحي 500 مل متزامن • ملائم لمرضى القلب والضغط • راحة تامة',
-    basePrice: 0,
-  },
-  {
-    id: 'De-ironing Phlebotomy',
-    nameEn: 'Serial De-ironing Phlebotomy',
-    nameAr: 'جلسة تخفيض مخزون الحديد (Ferritin)',
-    badgeEn: 'Hemochromatosis Iron Depletion',
-    badgeAr: 'بروتوكول هيموكروماتوزيس',
-    descEn: 'Targeted phlebotomy session in a serial depletion protocol to lower serum ferritin to safe clinical ranges.',
-    descAr: 'جلسة فصد ضمن برنامج مجدول ومنتظم لتخفيض فيريتين الدم وحماية الكبد والقلب من ترسب الحديد الزائد.',
-    specEn: 'Serial ferritin monitoring • Patient schedule card • Post-procedure hydration',
-    specAr: 'متابعة تحليل الفيريتين • بطاقة جدول جلسات • توصيات تغذية وترطيب',
-    basePrice: 0,
-  },
-];
-
-const OTHER_PRODUCTS_OPTIONS: {
-  id: BloodProductOption;
-  nameEn: string;
-  nameAr: string;
-  badgeEn: string;
-  badgeAr: string;
-  descEn: string;
-  descAr: string;
-  specEn: string;
-  specAr: string;
-  basePrice: number;
-}[] = [
-  {
-    id: 'Cryoprecipitate (cryo)',
-    nameEn: 'Cryoprecipitate (cryo)',
-    nameAr: 'كرايو بريسيبيتات Cryoprecipitate (cryo)',
-    badgeEn: 'Factor VIII & Fibrinogen Rich',
-    badgeAr: 'غني بالفيبرينوجين وعامل VIII',
-    descEn: 'Insoluble plasma fraction rich in Factor VIII, von Willebrand factor, fibrinogen, and Factor XIII for hypofibrinogenemia and massive transfusions.',
-    descAr: 'مستخلص بلازمي غير ذائب غني بالفيبرينوجين وعامل التجلط الثامن وعامل فون ويلبراند لعلاج نقص الفيبرينوجين والنزيف الحاد.',
-    specEn: 'Stored frozen at -18°C • Rapid clinical thaw • High fibrinogen yield',
-    specAr: 'محفوظ في درجة حرارة -18 مئوية • إذابة سريرية سريعة • تركيز فيبرينوجين عالي',
-    basePrice: 0,
-  },
-  {
-    id: 'Intravenous immunoglobulin (IVIG)',
-    nameEn: 'Intravenous immunoglobulin (IVIG)',
-    nameAr: 'غلوبولين مناعي وريدي (IVIG)',
-    badgeEn: 'Sterile Concentrated IgG Antibodies',
-    badgeAr: 'أجسام مضادة IgG مركزة ومعقمة',
-    descEn: 'Sterile, highly purified concentrated immunoglobulin G (IgG) solution for primary immunodeficiencies, ITP, Guillain-Barré syndrome, and autoimmune conditions.',
-    descAr: 'مستحضر غلوبولين مناعي وريدي عالي النقاوة غني بالأجسام المضادة المركزة (IgG) لعلاج نقص المناعة الأولي ومتلازمة غيلان باريه ونقص الصفائح المناعي.',
-    specEn: 'Calibrated cold storage (2°C–8°C) • Batch & vial traceability • Hospital infusion ready',
-    specAr: 'حفظ مبرد (2°–8° مئوية) • تتبع دقيق للمصنع والتشغيلة • جاهز للتسريب السريري',
-    basePrice: 0,
-  },
 ];
 
 const ALLOWED_GOVERNORATES = [
@@ -458,6 +256,7 @@ const getUserPrefill = (user: UserProfile | null, lang: 'ar' | 'en') => {
 
 export const MultiStepOrderFlow: React.FC<MultiStepOrderFlowProps> = ({
   initialProductId,
+  initialBloodType,
   initialCategory,
   onOrderCompleted,
   onNavigateProducts,
@@ -492,35 +291,30 @@ export const MultiStepOrderFlow: React.FC<MultiStepOrderFlowProps> = ({
     }
   }, [initialCategory]);
 
-  const currentOptions =
-    selectedCategory === 'plasma'
-      ? PLASMA_OPTIONS
-      : selectedCategory === 'platelets'
-      ? PLATELETS_OPTIONS
-      : selectedCategory === 'phlebotomy'
-      ? PHLEBOTOMY_OPTIONS
-      : selectedCategory === 'other-products'
-      ? OTHER_PRODUCTS_OPTIONS
-      : BLOOD_OPTIONS;
-
   // User state synchronized with database engine
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => db.getCurrentUser());
+  const [catalog, setCatalog] = useState(() => db.getCatalogProducts());
   const [profileAutoFilledNotice, setProfileAutoFilledNotice] = useState(false);
 
   // Subscribe to DB changes so currentUser stays in sync upon login or profile updates
   useEffect(() => {
     const handleDbChange = () => {
       setCurrentUser(db.getCurrentUser());
+      setCatalog(db.getCatalogProducts());
     };
-    return db.subscribe(handleDbChange);
+    const unsubscribe = db.subscribe(handleDbChange);
+    handleDbChange();
+    void db.pullCatalogFromSupabase();
+    return unsubscribe;
   }, []);
 
   // Selection choices - automatically reflects the signed-in user's blood type if registered
   const [selectedBloodType, setSelectedBloodType] = useState<BloodTypeGroup>(() => {
     const isAboCategory = initialCategory === 'plasma' || initialCategory === 'platelets';
     const u = db.getCurrentUser();
-    if (u?.blood_type) {
-      return isAboCategory ? (u.blood_type.replace(/[+-]/g, '') as BloodTypeGroup) : u.blood_type;
+    const bloodType = initialBloodType || u?.blood_type;
+    if (bloodType) {
+      return isAboCategory ? (bloodType.replace(/[+-]/g, '') as BloodTypeGroup) : bloodType;
     }
     return isAboCategory ? 'A' : 'O+';
   });
@@ -541,34 +335,16 @@ export const MultiStepOrderFlow: React.FC<MultiStepOrderFlowProps> = ({
     }
   }, [selectedCategory, selectedBloodType]);
 
-  const [selectedOptions, setSelectedOptions] = useState<BloodProductOption[]>(() => {
-    const opts =
-      initialCategory === 'plasma'
-        ? PLASMA_OPTIONS
-        : initialCategory === 'platelets'
-        ? PLATELETS_OPTIONS
-        : initialCategory === 'phlebotomy'
-        ? PHLEBOTOMY_OPTIONS
-        : initialCategory === 'other-products'
-        ? OTHER_PRODUCTS_OPTIONS
-        : BLOOD_OPTIONS;
-    return [opts[0].id];
+  const [selectedOptions, setSelectedOptions] = useState<string[]>([]);
+  const currentOptions = useMemo(
+    () => catalog.filter((product) => productCategory(product) === selectedCategory),
+    [catalog, selectedCategory]
+  );
+  const selectedProducts = selectedOptions.flatMap((id) => {
+    const product = currentOptions.find((option) => option.id === id);
+    return product ? [product] : [];
   });
-
-  // Backward compatibility alias for single representation
-  const selectedOption = selectedOptions[0] || (currentOptions[0]?.id as BloodProductOption) || 'Packed Red Blood';
-
-  // Ensure selectedOptions match the active category
-  useEffect(() => {
-    const validSelected = selectedOptions.filter((opt) => currentOptions.some((o) => o.id === opt));
-    if (validSelected.length === 0 && currentOptions.length > 0) {
-      setSelectedOptions([currentOptions[0].id]);
-    } else if (validSelected.length !== selectedOptions.length) {
-      setSelectedOptions(validSelected);
-    }
-  }, [selectedCategory, currentOptions]);
-
-  const [matchedProduct, setMatchedProduct] = useState<Product | null>(null);
+  const primaryProduct = selectedProducts[0];
 
   // Draft state for Step 2 & 3 initialized with user profile details
   const [draft, setDraft] = useState<OrderDraft>(() => {
@@ -578,7 +354,6 @@ export const MultiStepOrderFlow: React.FC<MultiStepOrderFlowProps> = ({
     return {
       productCategory: initialCategory || 'blood-bag',
       bloodType: u?.blood_type || 'O+',
-      bloodProductOption: 'Packed Red Blood',
       quantity: 1,
       patientName: prefill?.patientName || '',
       patientAge: prefill?.patientAge ?? '',
@@ -692,91 +467,39 @@ export const MultiStepOrderFlow: React.FC<MultiStepOrderFlowProps> = ({
   const [submissionError, setSubmissionError] = useState('');
   const [isPaymobModalOpen, setIsPaymobModalOpen] = useState(false);
 
-  // Load initial product if provided
+  const requestedProduct = initialProductId ? db.getProductById(initialProductId) : undefined;
+  const requestedKey = requestedProduct && catalogProductKey(
+    requestedProduct.product_type_id,
+    requestedProduct.product_type_name
+  );
+  const initialProduct = catalog.find((product) =>
+    product.id === initialProductId ||
+    catalogProductKey(product.product_type_id, product.product_type_name) === requestedKey
+  );
+  const catalogEntryId = initialProduct?.id;
+  const catalogEntryCategory = initialProduct && productCategory(initialProduct);
+
   useEffect(() => {
-    if (initialProductId) {
-      const prod = db.getProductById(initialProductId);
-      if (prod) {
-        if (
-          prod.product_type_name?.toLowerCase().includes('plasma') ||
-          prod.name?.toLowerCase().includes('plasma') ||
-          prod.name?.includes('بلازما')
-        ) {
-          setSelectedBloodType((prod.blood_type.replace(/[+-]/g, '') || 'A') as BloodTypeGroup);
-          setSelectedCategory('plasma');
-          setSelectedOptions(['Fresh Frozen Plasma']);
-        } else if (
-          prod.product_type_name?.toLowerCase().includes('platelet') ||
-          prod.name?.toLowerCase().includes('platelet') ||
-          prod.name?.includes('صفائح')
-        ) {
-          setSelectedBloodType((prod.blood_type.replace(/[+-]/g, '') || 'A') as BloodTypeGroup);
-          setSelectedCategory('platelets');
-          setSelectedOptions(['Apheresis Platelets']);
-        } else if (
-          prod.product_type_name?.toLowerCase().includes('phlebotom') ||
-          prod.name?.toLowerCase().includes('phlebotom') ||
-          prod.name?.includes('فصد')
-        ) {
-          setSelectedBloodType(prod.blood_type);
-          setSelectedCategory('phlebotomy');
-          setSelectedOptions(['Standard Phlebotomy']);
-        } else if (
-          prod.product_type_name?.toLowerCase().includes('filter') ||
-          prod.product_type_name?.toLowerCase().includes('leuko') ||
-          prod.product_type_name?.includes('مفلتر')
-        ) {
-          setSelectedBloodType(prod.blood_type);
-          setSelectedCategory('blood-bag');
-          setSelectedOptions(['Filtered Blood']);
-        } else if (
-          prod.product_type_name?.toLowerCase().includes('irradiat') ||
-          prod.product_type_name?.toLowerCase().includes('radiant')
-        ) {
-          setSelectedBloodType(prod.blood_type);
-          setSelectedCategory('blood-bag');
-          setSelectedOptions(['Irradiated Blood']);
-        } else {
-          setSelectedBloodType(prod.blood_type);
-          setSelectedCategory('blood-bag');
-          setSelectedOptions(['Packed Red Blood']);
-        }
-      }
+    if (catalogEntryId && catalogEntryCategory) {
+      setSelectedCategory(catalogEntryCategory);
+      setSelectedOptions([catalogEntryId]);
     }
-  }, [initialProductId]);
+  }, [catalogEntryId, catalogEntryCategory]);
 
-  // Update matched product when blood type, category or options change
   useEffect(() => {
-    const primaryOption = selectedOptions[0] || (currentOptions[0]?.id as BloodProductOption) || 'Packed Red Blood';
-    const prod = db.getProductByChoice(selectedBloodType, primaryOption);
-    setMatchedProduct(prod);
-    setDraft((prev) => ({
-      ...prev,
-      productCategory: selectedCategory,
-      bloodType: selectedBloodType,
-      bloodProductOption: primaryOption,
-      selectedOptions: selectedOptions,
-      productId: prod.id,
-      product: prod,
-      productTypeId: prod.product_type_id,
-      productTypeName: prod.product_type_name,
-    }));
-  }, [selectedBloodType, selectedOptions, selectedCategory, currentOptions]);
+    // Let the requested product set its category before validating selections.
+    if (catalogEntryCategory && selectedCategory !== catalogEntryCategory) return;
+    setSelectedOptions((previous) => {
+      const valid = previous.filter((id) => currentOptions.some((product) => product.id === id));
+      if (valid.length === 0 && currentOptions.length > 0) return [currentOptions[0].id];
+      return valid.length === previous.length ? previous : valid;
+    });
+  }, [catalogEntryCategory, currentOptions, selectedCategory]);
 
-  // Pricing calculations: sum of unit prices of all selected options (all products 0)
-  const unitPrice = useMemo(() => {
-    if (selectedOptions.length === 0) return 0;
-    return selectedOptions.reduce((acc, optId) => {
-      const optMeta = currentOptions.find((o) => o.id === optId);
-      const base = optMeta ? optMeta.basePrice : 0;
-      return acc + base;
-    }, 0);
-  }, [selectedOptions, currentOptions]);
-
+  const unitPrice = selectedProducts.reduce((sum, product) => sum + product.price, 0);
   const quantity = Math.max(1, draft.quantity || 1);
   const subtotal = unitPrice * quantity;
-  const deliveryFee = draft.deliveryFee || 0;
-  const total = subtotal + deliveryFee;
+  const total = subtotal;
 
   // Dynamically compute the product display name for header h1
   // Directly and exclusively reflects the exact product name chosen (e.g. 'بلازما' for plasma, 'كيس دم' for blood bag)
@@ -808,15 +531,11 @@ export const MultiStepOrderFlow: React.FC<MultiStepOrderFlowProps> = ({
     if (catMeta) {
       return language === 'ar' ? catMeta.subtextAr : catMeta.subtextEn;
     }
-    const primaryOptionMeta = currentOptions.find((o) => selectedOptions.includes(o.id));
-    if (primaryOptionMeta) {
-      return language === 'ar' ? primaryOptionMeta.descAr : primaryOptionMeta.descEn;
-    }
     return t('orderFlowSubtitle');
-  }, [selectedCategory, currentOptions, selectedOptions, language, t]);
+  }, [selectedCategory, language, t]);
 
   // Toggle or select all options helper
-  const handleToggleOption = (optId: BloodProductOption) => {
+  const handleToggleOption = (optId: string) => {
     setSelectedOptions((prev) => {
       if (prev.includes(optId)) {
         if (prev.length === 1) {
@@ -832,6 +551,7 @@ export const MultiStepOrderFlow: React.FC<MultiStepOrderFlowProps> = ({
 
   const handleToggleSelectAll = () => {
     const allIds = currentOptions.map((o) => o.id);
+    if (allIds.length === 0) return;
     if (selectedOptions.length === allIds.length) {
       // If all currently selected, revert to the first option
       setSelectedOptions([allIds[0]]);
@@ -854,7 +574,7 @@ export const MultiStepOrderFlow: React.FC<MultiStepOrderFlowProps> = ({
       ]);
       return;
     }
-    if (selectedOptions.length === 0) {
+    if (!primaryProduct) {
       setValidationErrors([
         language === 'ar' ? 'يرجى اختيار خيار واحد على الأقل من مواصفات المنتج' : 'Please select at least one product option.',
       ]);
@@ -921,6 +641,13 @@ export const MultiStepOrderFlow: React.FC<MultiStepOrderFlowProps> = ({
 
     const errors: string[] = [];
 
+    if (!primaryProduct) {
+      setValidationErrors([
+        language === 'ar' ? 'يرجى اختيار منتج متاح للطلب.' : 'Select a product available for sourcing.',
+      ]);
+      return;
+    }
+
     const finalName = (draft.customerName || draft.patientName || currentUser.full_name || '').trim();
     if (!finalName) {
       errors.push(language === 'ar' ? 'يرجى كتابة الاسم' : 'Please enter your name.');
@@ -953,17 +680,17 @@ export const MultiStepOrderFlow: React.FC<MultiStepOrderFlowProps> = ({
         patientName: finalName,
         patientAge: 30,
         bloodType: selectedBloodType,
-        productTypeId: matchedProduct?.product_type_id || 'pt-packed-rbc',
-        productTypeName: selectedOptions.join(', '),
-        productId: matchedProduct?.id,
+        productTypeId: primaryProduct.product_type_id,
+        productTypeName: selectedProducts.map((product) => product.name).join(', '),
+        productId: primaryProduct.id,
         productCategory: selectedCategory,
-        selectedOptions: selectedOptions,
-        productName: matchedProduct?.name || `${selectedOptions.join(' + ')} (${selectedBloodType})`,
+        selectedOptions: selectedProducts.map((product) => product.name),
+        productName: primaryProduct.name,
         quantity,
-        unitPrice: 0,
-        subtotal: 0,
+        unitPrice,
+        subtotal,
         deliveryFee: 0,
-        total: 0,
+        total,
         paymentMethod: 'Cash on Delivery',
         paymentStatus: 'Cash on Delivery',
         notes: `Registered User Order - Name: ${finalName}, Phone: ${finalPhone}, Account: ${currentUser.email}`,
@@ -1410,15 +1137,10 @@ export const MultiStepOrderFlow: React.FC<MultiStepOrderFlowProps> = ({
                   <div className="space-y-3 sm:space-y-4">
                     {currentOptions.map((opt) => {
                       const isSelected = selectedOptions.includes(opt.id);
-                      const priceToDisplay = opt.basePrice;
                       return (
                         <button
                           key={opt.id}
-                          id={
-                            opt.id === 'Filtered Blood' || opt.id === 'Leukoreduced Blood'
-                              ? 'choice-option-leukoreduced-blood'
-                              : `choice-option-${opt.id.toLowerCase().replace(/\s+/g, '-')}`
-                          }
+                          id={`choice-option-${opt.id}`}
                           type="button"
                           onClick={() => handleToggleOption(opt.id)}
                           className={`w-full text-left rtl:text-right p-5 rounded-xl border-2 transition-all flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 cursor-pointer ${
@@ -1446,23 +1168,10 @@ export const MultiStepOrderFlow: React.FC<MultiStepOrderFlowProps> = ({
                                     isSelected ? 'text-red-950' : 'text-slate-900'
                                   }`}
                                 >
-                                  {language === 'ar' ? opt.nameAr : opt.nameEn}
+                                  {opt.name}
                                 </h3>
-                                <span
-                                  className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
-                                    isSelected
-                                      ? 'bg-red-200 text-red-900'
-                                      : 'bg-slate-100 text-slate-600 border border-slate-200'
-                                  }`}
-                                >
-                                  {language === 'ar' ? opt.badgeAr : opt.badgeEn}
-                                </span>
                               </div>
-                              {Boolean(language === 'ar' ? opt.specAr : opt.specEn) && (
-                                <p className="text-[11px] font-medium text-slate-500">
-                                  {language === 'ar' ? opt.specAr : opt.specEn}
-                                </p>
-                              )}
+                              {opt.description && <p className="text-xs text-slate-600">{opt.description}</p>}
                             </div>
                           </div>
 
@@ -1471,12 +1180,17 @@ export const MultiStepOrderFlow: React.FC<MultiStepOrderFlowProps> = ({
                               {language === 'ar' ? 'السعر ' : 'Option Price'}
                             </span>
                             <div className="text-lg font-black text-red-700">
-                              {priceToDisplay} {t('currency')}
+                              {opt.price} {t('currency')}
                             </div>
                           </div>
                         </button>
                       );
                     })}
+                    {currentOptions.length === 0 && (
+                      <p className="rounded-xl border border-slate-200 p-4 text-sm text-slate-600">
+                        {language === 'ar' ? 'لا توجد منتجات للطلب في هذه الفئة.' : 'There are no products to request in this category.'}
+                      </p>
+                    )}
                   </div>
                 </div>
               );
@@ -1644,7 +1358,7 @@ export const MultiStepOrderFlow: React.FC<MultiStepOrderFlowProps> = ({
                     {language === 'ar'
                       ? CATEGORY_METADATA[selectedCategory]?.unitLabelAr || 'أكياس'
                       : CATEGORY_METADATA[selectedCategory]?.unitLabelEn || 'Units'}{' '}
-                    • 0 {t('currency')} • {language === 'ar' ? 'توصيل مبرد مجاني معتمد' : 'Free Certified Cold-Chain Delivery'}
+                    • {subtotal} {t('currency')} • {language === 'ar' ? 'توصيل مبرد مجاني معتمد' : 'Free Certified Cold-Chain Delivery'}
                   </span>
                 </div>
               </div>
@@ -1841,7 +1555,7 @@ export const MultiStepOrderFlow: React.FC<MultiStepOrderFlowProps> = ({
               <div className="p-4 rounded-xl bg-slate-50 border border-slate-200/80 space-y-2 text-xs sm:text-sm">
                 <div className="flex justify-between items-center text-slate-600">
                   <span>{language === 'ar' ? 'سعر المنتجات المطلوبة:' : 'Requisition Price:'}</span>
-                  <span className="font-bold text-slate-900">0 {t('currency')}</span>
+                  <span className="font-bold text-slate-900">{subtotal} {t('currency')}</span>
                 </div>
                 <div className="flex justify-between items-center text-slate-600">
                   <span className="flex items-center gap-1.5">
@@ -1854,7 +1568,7 @@ export const MultiStepOrderFlow: React.FC<MultiStepOrderFlowProps> = ({
                 </div>
                 <div className="border-t border-slate-200 pt-2 flex justify-between items-center text-sm sm:text-base font-black text-slate-900">
                   <span>{language === 'ar' ? 'المجموع الكلي المطلوب سداده:' : 'Total Payable:'}</span>
-                  <span className="text-red-700 text-lg font-black">0 {t('currency')}</span>
+                  <span className="text-red-700 text-lg font-black">{total} {t('currency')}</span>
                 </div>
               </div>
 
@@ -1910,8 +1624,8 @@ export const MultiStepOrderFlow: React.FC<MultiStepOrderFlowProps> = ({
                         : 'Authorizing Order...'
                       : currentUser
                       ? language === 'ar'
-                        ? 'تأكيد وإرسال الطلب (0 ج.م)'
-                        : 'Confirm & Place Order (0 EGP)'
+                        ? `تأكيد وإرسال الطلب (${total} ج.م)`
+                        : `Confirm & Place Order (${total} EGP)`
                       : language === 'ar'
                       ? 'إنشاء حساب أولاً لإتمام الطلب'
                       : 'Register First to Place Order'}

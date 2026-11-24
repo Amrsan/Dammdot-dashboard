@@ -1,7 +1,7 @@
+import { isListedProduct, listCatalogProducts } from './productCatalog';
 import {
   BloodTypeItem,
   BloodTypeGroup,
-  BloodProductOption,
   ProductTypeItem,
   Product,
   Governorate,
@@ -12,7 +12,6 @@ import {
   OrderStatus,
   OrderStatusHistoryItem,
   UserProfile,
-  StockAvailability,
   ProductCategoryKey,
 } from '../types';
 import {
@@ -129,6 +128,34 @@ export function getSafeSupabaseProductTypeId(
   return 'pt-packed-rbc';
 }
 
+type SyncResult = {
+  success: boolean;
+  syncedOrders: number;
+  syncedProfiles: number;
+  message: string;
+};
+
+/**
+ * Merge remote catalog rows into the local list: remote values win per field and
+ * local-only rows are kept, so a pull can never delete a product that has not
+ * reached Supabase yet.
+ */
+function mergeCatalog<T extends { id: string }>(
+  local: T[],
+  remote: any[],
+  build: (row: any, known?: T) => T,
+  matches: (item: T, row: any) => boolean = (item, row) => item.id === row.id
+): { items: T[]; changed: boolean } {
+  const items = local.map((item) => ({ ...item }));
+  remote.forEach((row) => {
+    const index = items.findIndex((item) => matches(item, row));
+    const merged = build(row, index === -1 ? undefined : items[index]);
+    if (index === -1) items.push(merged);
+    else items[index] = merged;
+  });
+  return { items, changed: JSON.stringify(items) !== JSON.stringify(local) };
+}
+
 class DatabaseEngine {
   private static instance: DatabaseEngine;
 
@@ -144,6 +171,9 @@ class DatabaseEngine {
   private addresses: DeliveryAddress[] = [];
   private currentUser: UserProfile | null = null;
   private listeners: Array<() => void> = [];
+  private catalogPullPromise: Promise<void> | null = null;
+  private catalogSyncPromise: Promise<SyncResult> | null = null;
+  private catalogWatcherAttached = false;
   private activeResetRequests: Record<string, { code: string; expiresAt: number; phoneHint?: string }> = {};
 
   constructor() {
@@ -193,7 +223,7 @@ class DatabaseEngine {
         this.areas = parsed.areas || SEED_AREAS;
         this.products = (parsed.products || SEED_PRODUCTS).map((p: Product) => ({
           ...p,
-          price: 0,
+          price: Number(p.price ?? 0),
         }));
         // Ensure Filtered, Washed, Plasma and Platelets ABO products are in database
         SEED_PRODUCTS.forEach((sp) => {
@@ -326,7 +356,119 @@ class DatabaseEngine {
 
     // Save cleansed UUID state and launch background Supabase synchronization
     this.save();
-    this.syncWithSupabase();
+    this.watchCatalogRefresh();
+    // syncWithSupabase awaits the catalog pull before it writes anything, so the
+    // startup pull and sync run one after the other instead of racing.
+    void this.syncWithSupabase();
+  }
+
+  /** Refresh the storefront from the shared catalog. Concurrent callers share one pull. */
+  public async pullCatalogFromSupabase(): Promise<void> {
+    if (!supabase) return;
+    if (this.catalogPullPromise) return this.catalogPullPromise;
+    this.catalogPullPromise = this.runCatalogPull().finally(() => {
+      this.catalogPullPromise = null;
+    });
+    return this.catalogPullPromise;
+  }
+
+  private async runCatalogPull(): Promise<void> {
+    let changed = false;
+
+    try {
+      const [productsRes, productTypesRes, bloodTypesRes] = await Promise.all([
+        supabase.from('products').select('*'),
+        supabase.from('product_types').select('*'),
+        supabase.from('blood_types').select('*'),
+      ]);
+
+      if (!productTypesRes.error && productTypesRes.data?.length) {
+        const types = mergeCatalog<ProductTypeItem>(
+          this.productTypes,
+          productTypesRes.data as any[],
+          (row, known) => ({
+            ...(known || {}),
+            id: row.id,
+            name: row.name ?? known?.name ?? '',
+            description: row.description ?? known?.description,
+            active: row.active ?? known?.active ?? true,
+            created_at: row.created_at ?? known?.created_at ?? new Date().toISOString(),
+          })
+        );
+        this.productTypes = types.items;
+        changed = types.changed || changed;
+      }
+
+      if (!productsRes.error && productsRes.data) {
+        const typeNameById = new Map<string, string>();
+        this.productTypes.forEach((pt) => typeNameById.set(pt.id, pt.name));
+        const products = mergeCatalog<Product>(
+          this.products,
+          productsRes.data as any[],
+          (row, known) => {
+            const productTypeId = row.product_type_id ?? known?.product_type_id ?? '';
+            return {
+              ...(known || {}),
+              ...row,
+              name: row.name ?? known?.name ?? '',
+              description: row.description ?? known?.description ?? '',
+              blood_type: row.blood_type as Product['blood_type'],
+              product_type_id: productTypeId,
+              product_type_name:
+                typeNameById.get(productTypeId) || row.product_type_name || known?.product_type_name,
+              price: Number(row.price ?? known?.price ?? 0),
+              stock_quantity: Number(row.stock_quantity ?? known?.stock_quantity ?? 0),
+              availability: (row.availability ?? known?.availability ?? 'In Stock') as Product['availability'],
+              image_url: row.image_url ?? known?.image_url ?? '',
+              created_at: row.created_at ?? known?.created_at ?? new Date().toISOString(),
+            } as Product;
+          }
+        );
+        const remoteIds = new Set(productsRes.data.map((row) => row.id));
+        const remoteProducts = products.items.filter((product) => remoteIds.has(product.id));
+        changed = products.changed || remoteProducts.length !== this.products.length || changed;
+        this.products = remoteProducts;
+      }
+
+      if (!bloodTypesRes.error && bloodTypesRes.data?.length) {
+        const bloodTypes = mergeCatalog<BloodTypeItem>(
+          this.bloodTypes,
+          bloodTypesRes.data as any[],
+          (row, known) => ({
+            ...(known || {}),
+            id: row.id,
+            name: (row.name ?? known?.name ?? 'O+') as BloodTypeItem['name'],
+            active: row.active ?? known?.active ?? true,
+            created_at: row.created_at ?? known?.created_at ?? new Date().toISOString(),
+          }),
+          (item, row) => item.id === row.id || item.name === row.name
+        );
+        this.bloodTypes = bloodTypes.items;
+        changed = bloodTypes.changed || changed;
+      }
+    } catch (err) {
+      console.warn('[Supabase Catalog] pull failed:', err);
+    }
+
+    if (changed) {
+      this.save();
+      this.notify();
+    }
+  }
+
+  private watchCatalogRefresh() {
+    if (typeof window === 'undefined' || this.catalogWatcherAttached) return;
+    this.catalogWatcherAttached = true;
+    const refresh = () => {
+      void this.pullCatalogFromSupabase();
+    };
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) refresh();
+    });
+    window.setInterval(() => {
+      if (!document.hidden) refresh();
+    }, 30_000);
   }
 
   public seedDefault() {
@@ -1055,55 +1197,33 @@ class DatabaseEngine {
 
   /**
    * Bi-directional synchronization engine with Supabase:
-   * - Syncs all medical product types and products to Supabase catalog
+   * - Reads the shared sourcing catalog from Supabase
    * - Syncs all local user profiles to Supabase profiles table
    * - Syncs delivery addresses to Supabase delivery_addresses table
    * - Pulls remote orders from Supabase orders table
    * - Pushes any unsynced local orders to Supabase orders table with resilient fallback
    */
-  public async syncWithSupabase(): Promise<{ success: boolean; syncedOrders: number; syncedProfiles: number; message: string }> {
+  public async syncWithSupabase(): Promise<SyncResult> {
     if (!supabase) {
       return { success: false, syncedOrders: 0, syncedProfiles: 0, message: 'Supabase is not configured' };
     }
+    // A single sync runs at a time; callers arriving mid-run wait for it.
+    if (this.catalogSyncPromise) return this.catalogSyncPromise;
+    this.catalogSyncPromise = this.runSyncWithSupabase().finally(() => {
+      this.catalogSyncPromise = null;
+    });
+    return this.catalogSyncPromise;
+  }
+
+  private async runSyncWithSupabase(): Promise<SyncResult> {
+    // Resolve current catalog IDs before syncing orders.
+    await this.pullCatalogFromSupabase();
 
     let syncedProfiles = 0;
     let syncedOrders = 0;
 
     try {
-      // 1. Ensure all Product Types (including Plasma, Platelets, Phlebotomy) are in Supabase
-      try {
-        for (const pt of this.productTypes) {
-          await supabase.from('product_types').upsert({
-            id: pt.id,
-            name: pt.name,
-            description: pt.description,
-            active: pt.active !== undefined ? pt.active : true,
-          }, { onConflict: 'id' });
-        }
-      } catch (ptErr) {
-        console.warn('[Supabase Sync Warning] Product types sync:', ptErr);
-      }
-
-      // 2. Ensure all Products (Blood Bags, Plasma, Platelets, Phlebotomy, Filtered, Washed) are in Supabase
-      try {
-        for (const p of this.products) {
-          await supabase.from('products').upsert({
-            id: p.id,
-            name: p.name,
-            description: p.description,
-            blood_type: p.blood_type,
-            product_type_id: p.product_type_id,
-            price: p.price,
-            stock_quantity: p.stock_quantity,
-            availability: p.availability,
-            image_url: p.image_url,
-          }, { onConflict: 'id' });
-        }
-      } catch (prodErr) {
-        console.warn('[Supabase Sync Warning] Products sync:', prodErr);
-      }
-
-      // 3. Sync all existing profiles to Supabase public.profiles
+      // Sync existing profiles to Supabase public.profiles.
       const usersToSync = this.users.filter((u) => u.email && isUUID(u.id));
       for (const u of usersToSync) {
         try {
@@ -1312,141 +1432,19 @@ class DatabaseEngine {
     return [...this.products];
   }
 
+  public getCatalogProducts(): Product[] {
+    return listCatalogProducts(this.products, this.productTypes)
+      .filter((product) => isListedProduct(product, this.productTypes));
+  }
+
   public getProductById(id: string): Product | undefined {
-    return this.products.find((p) => p.id === id);
+    return this.products.find((product) => product.id === id);
   }
 
-  public getProductByChoice(
-    bloodType: BloodTypeGroup,
-    option: BloodProductOption | string
-  ): Product {
-    // Normalize option alias
-    const normalizedOption =
-      option === 'Leukoreduced Blood' ? 'Filtered Blood' : option;
-
-    // Look for exact match or mapped types
-    const found = this.products.find(
-      (p) =>
-        (p.blood_type === bloodType || (['A', 'B', 'AB', 'O'].includes(bloodType) && p.blood_type?.replace(/[+-]/g, '') === bloodType)) &&
-        (p.product_type_name?.toLowerCase() === normalizedOption.toLowerCase() ||
-          p.product_type_name?.toLowerCase() === option.toLowerCase() ||
-          ((normalizedOption === 'Filtered Blood' || option === 'Leukoreduced Blood') &&
-            (p.product_type_name?.toLowerCase().includes('filter') ||
-              p.product_type_name?.toLowerCase().includes('leuko') ||
-              p.product_type_name?.includes('مفلتر') ||
-              p.name?.includes('مفلتر'))) ||
-          (normalizedOption === 'Washed Blood' &&
-            (p.product_type_name?.toLowerCase().includes('wash') ||
-              p.product_type_name?.includes('مغسول') ||
-              p.name?.includes('مغسول'))) ||
-          (normalizedOption === 'Packed Red Blood' && p.product_type_name === 'Stack Blood') ||
-          (normalizedOption === 'Irradiated Blood' && p.product_type_name === 'Radiant'))
-    );
-    if (found) return found;
-
-    // If not found, ensure product type exists and create product entry
-    let pt = this.productTypes.find(
-      (t) =>
-        t.name.toLowerCase() === normalizedOption.toLowerCase() ||
-        t.name.toLowerCase() === option.toLowerCase()
-    );
-    if (!pt) {
-      pt = this.addProductType(
-        normalizedOption,
-        normalizedOption === 'Filtered Blood'
-          ? 'دم مفلتر - Precision micro-filtered red blood cells (<5×10⁶ WBC)'
-          : normalizedOption === 'Washed Blood'
-          ? 'دم مغسول - Saline-washed red blood cells'
-          : `${normalizedOption} certified units`
-      );
-    }
-
-    const basePrices: Record<string, number> = {
-      // Blood bag
-      'Packed Red Blood': 0,
-      'Filtered Blood': 0,
-      'Leukoreduced Blood': 0,
-      'Washed Blood': 0,
-      'Irradiated Blood': 0,
-      // Plasma (Rh-independent)
-      'Fresh Frozen Plasma': 0,
-      'Cryoprecipitate': 0,
-      'Solvent-Detergent Plasma': 0,
-      // Platelets (Rh-independent)
-      'Apheresis Platelets': 0,
-      'Random Donor Platelets': 0,
-      'Irradiated Platelets': 0,
-      // Therapeutic Phlebotomy
-      'Standard Phlebotomy': 0,
-      'Saline-Replacement Phlebotomy': 0,
-      'De-ironing Phlebotomy': 0,
-      // Other Products
-      'Cryoprecipitate (cryo)': 0,
-      'Intravenous immunoglobulin (IVIG)': 0,
-      'Cryoprecipitate (Cryo)': 0,
-      'Intravenous Immunoglobulin (IVIG)': 0,
-    };
-
-    const arabicName =
-      normalizedOption === 'Filtered Blood'
-        ? 'دم مفلتر'
-        : normalizedOption === 'Washed Blood'
-        ? 'دم مغسول'
-        : normalizedOption === 'Packed Red Blood'
-        ? 'دم مكدس'
-        : normalizedOption === 'Irradiated Blood'
-        ? 'دم مشع'
-        : normalizedOption === 'Fresh Frozen Plasma'
-        ? 'بلازما مجمدة حديثة'
-        : normalizedOption === 'Cryoprecipitate' || normalizedOption.toLowerCase().includes('cryo')
-        ? 'راسب قري Cryoprecipitate (cryo)'
-        : normalizedOption === 'Solvent-Detergent Plasma'
-        ? 'بلازما معقمة'
-        : normalizedOption.toLowerCase().includes('ivig') || normalizedOption.toLowerCase().includes('immunoglobulin')
-        ? 'غلوبولين مناعي وريدي (IVIG)'
-        : normalizedOption === 'Apheresis Platelets'
-        ? 'صفائح أفيريسيس'
-        : normalizedOption === 'Random Donor Platelets'
-        ? 'صفائح مجمعة'
-        : normalizedOption === 'Irradiated Platelets'
-        ? 'صفائح مشعة'
-        : normalizedOption === 'Standard Phlebotomy'
-        ? 'فصد علاجي قياسي'
-        : normalizedOption === 'Saline-Replacement Phlebotomy'
-        ? 'فصد علاجي مع تعويض ملحي'
-        : normalizedOption === 'De-ironing Phlebotomy'
-        ? 'فصد علاجي خافض للحديد'
-        : normalizedOption;
-
-    const newProd: Product = {
-      id: `prod-${bloodType.toLowerCase().replace('+', 'pos').replace('-', 'neg')}-${pt.id}`,
-      name: `${normalizedOption} (${bloodType}) - ${arabicName}`,
-      description: `Certified clinical ${normalizedOption} (${arabicName}) unit, ABO/Rh verified for blood group ${bloodType}. Maintained under continuous 2°C–6°C cold-chain protocol.`,
-      blood_type: bloodType,
-      product_type_id: pt.id,
-      product_type_name: normalizedOption,
-      price: 0,
-      stock_quantity: 24,
-      availability: 'In Stock',
-      image_url: 'https://images.unsplash.com/photo-1615461066841-6116e61058f4?auto=format&fit=crop&w=600&q=80',
-      created_at: new Date().toISOString(),
-    };
-    this.products.unshift(newProd);
-    this.save();
-    this.notify();
-    return newProd;
-  }
-
-  public addProduct(p: Omit<Product, 'id' | 'created_at'>): Product {
-    const pt = this.productTypes.find((t) => t.id === p.product_type_id);
-    const availability: StockAvailability =
-      p.stock_quantity <= 0 ? 'Out of Stock' : p.stock_quantity <= 5 ? 'Limited Stock' : 'In Stock';
-
-    const newProduct: Product = {
-      ...p,
-      id: `prod-${Date.now()}`,
-      product_type_name: pt?.name || 'Standard',
-      availability,
+  public addProduct(product: Omit<Product, 'id' | 'created_at'>): Product {
+    const newProduct = {
+      ...product,
+      id: `prod-${crypto.randomUUID()}`,
       created_at: new Date().toISOString(),
     };
     this.products.unshift(newProduct);
@@ -1459,18 +1457,10 @@ class DatabaseEngine {
     const index = this.products.findIndex((p) => p.id === id);
     if (index === -1) throw new Error('Product not found');
 
-    let updated = { ...this.products[index], ...updates, updated_at: new Date().toISOString() };
+    const updated = { ...this.products[index], ...updates, updated_at: new Date().toISOString() };
     if (updates.product_type_id) {
       const pt = this.productTypes.find((t) => t.id === updates.product_type_id);
       if (pt) updated.product_type_name = pt.name;
-    }
-    if (typeof updates.stock_quantity === 'number') {
-      updated.availability =
-        updates.stock_quantity <= 0
-          ? 'Out of Stock'
-          : updates.stock_quantity <= 5
-          ? 'Limited Stock'
-          : 'In Stock';
     }
     this.products[index] = updated;
     this.save();
@@ -1732,23 +1722,9 @@ class DatabaseEngine {
     accuracyConfirmed: boolean;
     complianceAcknowledged: boolean;
   }): Order {
-    // 1. Server-side / engine stock verification - NO SILENT SUBSTITUTION
-    if (orderInput.productId) {
-      if (!SUPABASE_VALID_PRODUCT_IDS.has(orderInput.productId)) {
-        throw new Error(`Invalid product ID: ${orderInput.productId}. Product not found in catalog.`);
-      }
-      const product = this.products.find((p) => p.id === orderInput.productId);
-      if (!product) {
-        throw new Error(`Invalid product ID: ${orderInput.productId}. Product not found in catalog.`);
-      }
-      if (product.stock_quantity < orderInput.quantity) {
-        throw new Error(`Insufficient inventory: Requested ${orderInput.quantity} bags, but only ${product.stock_quantity} available.`);
-      }
-      if (product.availability === 'Out of Stock') {
-        throw new Error(`This blood product is currently out of stock.`);
-      }
-    } else {
-      throw new Error('Product ID is required to place an order.');
+    const product = orderInput.productId && this.getProductById(orderInput.productId);
+    if (!product || !isListedProduct(product, this.productTypes)) {
+      throw new Error('Select an active product to place an order.');
     }
 
     const orderNumber = this.generateOrderNumber();
@@ -1962,8 +1938,10 @@ class DatabaseEngine {
         : `${rawBt}+`;
 
       // 2. Resolve safe remote foreign keys (products and product_types)
-      const safeProductId = getSafeSupabaseProductId(order.product_id, order.blood_type, order.product_category);
-      const safeProductTypeId = getSafeSupabaseProductTypeId(order.product_type_id, order.product_category);
+      const catalogProduct = order.product_id ? this.getProductById(order.product_id) : undefined;
+      const safeProductId = catalogProduct?.id ?? getSafeSupabaseProductId(order.product_id);
+      const safeProductTypeId = catalogProduct?.product_type_id ??
+        getSafeSupabaseProductTypeId(order.product_type_id, order.product_category);
 
       // 3. User ID resolution
       let safeUserId: string | null = null;
@@ -2060,6 +2038,7 @@ class DatabaseEngine {
         const fallbackPayload = {
           ...basePayload,
           product_id: null,
+          product_type_id: getSafeSupabaseProductTypeId(order.product_type_id, order.product_category),
           user_id: null,
           governorate_id: null,
           city_id: null,
@@ -2204,32 +2183,6 @@ class DatabaseEngine {
 
     order.order_status = newStatus;
     order.updated_at = now;
-
-    // Inventory synchronization (Requirement 25)
-    if (newStatus === 'Confirmed' && oldStatus !== 'Confirmed') {
-      if (order.product_id) {
-        const prod = this.products.find((p) => p.id === order.product_id);
-        if (prod) {
-          prod.stock_quantity = Math.max(0, prod.stock_quantity - order.quantity);
-          prod.availability =
-            prod.stock_quantity === 0
-              ? 'Out of Stock'
-              : prod.stock_quantity <= 5
-              ? 'Limited Stock'
-              : 'In Stock';
-        }
-      }
-    } else if ((newStatus === 'Cancelled' || newStatus === 'Rejected') && oldStatus === 'Confirmed') {
-      // Restore inventory if previously confirmed order is cancelled/rejected
-      if (order.product_id) {
-        const prod = this.products.find((p) => p.id === order.product_id);
-        if (prod) {
-          prod.stock_quantity += order.quantity;
-          prod.availability =
-            prod.stock_quantity <= 5 ? 'Limited Stock' : 'In Stock';
-        }
-      }
-    }
 
     // Add to history
     this.orderHistory.push({

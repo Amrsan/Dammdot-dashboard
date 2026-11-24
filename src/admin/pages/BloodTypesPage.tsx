@@ -1,7 +1,7 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import { Droplets } from 'lucide-react';
 import { useAdminI18n } from '../lib/i18n';
-import { fetchBloodTypes, fetchProducts, toggleBloodType } from '../data/adminApi';
+import { fetchBloodTypes, toggleBloodType } from '../data/adminApi';
 import type { BloodTypeItem } from '../../types';
 import { useAsync } from '../lib/useAsync';
 import { Card, InlineNotice, PageHeader, Skeleton, Toggle, useToast } from '../components/ui';
@@ -13,13 +13,6 @@ export const BloodTypesPage: React.FC<{ session: AdminSession }> = ({ session })
   const canWrite = session.permissions.includes('catalog.write');
 
   const blood = useAsync(() => fetchBloodTypes(), []);
-  const products = useAsync(() => fetchProducts(), []);
-
-  const productCounts = useMemo(() => {
-    const map = new Map<string, number>();
-    (products.data || []).forEach((p) => map.set(p.blood_type, (map.get(p.blood_type) || 0) + 1));
-    return map;
-  }, [products.data]);
 
   const toggle = async (item: BloodTypeItem) => {
     try {
@@ -59,9 +52,6 @@ export const BloodTypesPage: React.FC<{ session: AdminSession }> = ({ session })
                   </span>
                   <div>
                     <p className="text-[15px] font-bold leading-tight text-slate-900">{item.name}</p>
-                    <p className="text-[10.5px] text-slate-400">
-                      {t('blood.usedBy', { count: productCounts.get(item.name) || 0 })}
-                    </p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">

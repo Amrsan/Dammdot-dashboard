@@ -34,7 +34,7 @@ export interface Product {
   id: string;
   name: string;
   description: string;
-  blood_type: BloodTypeGroup;
+  blood_type: BloodTypeGroup | null;
   product_type_id: string;
   product_type_name?: string;
   price: number;
@@ -43,6 +43,7 @@ export interface Product {
   image_url: string;
   created_at: string;
   updated_at?: string;
+  active?: boolean;
 }
 
 export interface Governorate {

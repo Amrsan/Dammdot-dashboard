@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Pencil, Plus, Power } from 'lucide-react';
 import { useAdminI18n } from '../lib/i18n';
-import { fetchProducts, fetchProductTypes, saveProductType, toggleProductType } from '../data/adminApi';
+import { fetchCatalogProducts, fetchProductTypes, saveProductType, toggleProductType } from '../data/adminApi';
 import type { ProductTypeItem } from '../../types';
 import { useAsync } from '../lib/useAsync';
 import { formatDate } from '../lib/format';
@@ -26,7 +26,7 @@ export const ProductTypesPage: React.FC<{ session: AdminSession }> = ({ session 
   const canWrite = session.permissions.includes('catalog.write');
 
   const types = useAsync(() => fetchProductTypes(), []);
-  const products = useAsync(() => fetchProducts(), []);
+  const products = useAsync(() => fetchCatalogProducts(), []);
 
   const [editing, setEditing] = useState<{ item: ProductTypeItem | null; name: string; description: string } | null>(
     null

@@ -1,3 +1,4 @@
+import { catalogProductKey, listCatalogProducts } from '../../services/productCatalog';
 import { db } from '../../services/db';
 import { isSupabaseConfigured, supabase } from '../../services/supabase';
 import type {
@@ -814,107 +815,53 @@ export async function fetchProducts(): Promise<Product[]> {
   return db.getProducts();
 }
 
-export interface ProductInput {
-  name: string;
-  description: string;
-  blood_type: Product['blood_type'];
-  product_type_id: string;
-  price: number;
-  stock_quantity: number;
-  availability: Product['availability'];
-  image_url: string;
-  active?: boolean;
+export async function fetchCatalogProducts(): Promise<Product[]> {
+  const [products, types] = await Promise.all([fetchProducts(), fetchProductTypes()]);
+  return listCatalogProducts(products, types);
 }
 
+export type ProductInput = Pick<Product, 'name' | 'description' | 'product_type_id' | 'price' | 'image_url'>;
+
 export async function saveProduct(id: string | null, input: ProductInput): Promise<Product> {
-  if (hasSupabaseSession()) {
-    const payload: Record<string, unknown> = {
-      ...input,
-      updated_at: new Date().toISOString(),
-    };
-    const withoutActive = (row: Record<string, unknown>) => {
-      const { active: _ignored, ...rest } = row;
-      return rest;
-    };
-    if (id) {
-      let response = await supabase!.from('products').update(payload).eq('id', id).select('*').single();
-      if (response.error && isMissingColumn(response.error)) {
-        response = await supabase!
-          .from('products')
-          .update(withoutActive(payload))
-          .eq('id', id)
-          .select('*')
-          .single();
-      }
-      if (response.error) throw response.error;
-      await writeAuditLog('product.updated', 'product', id, { name: input.name, price: input.price });
-      return response.data as unknown as Product;
-    }
-    const newId = `prod-${crypto.randomUUID()}`;
-    let inserted = await supabase!
-      .from('products')
-      .insert({ ...payload, id: newId })
-      .select('*')
-      .single();
-    if (inserted.error && isMissingColumn(inserted.error)) {
-      inserted = await supabase!
-        .from('products')
-        .insert({ ...withoutActive(payload), id: newId })
-        .select('*')
-        .single();
-    }
-    const { data, error } = inserted;
-    if (error) throw error;
-    await writeAuditLog('product.created', 'product', newId, { name: input.name });
-    return data as unknown as Product;
+  const name = input.name.trim();
+  if (!name || !Number.isFinite(input.price) || input.price < 0) {
+    throw new Error('Enter a product name and a valid price.');
+  }
+  const payload = { ...input, name, updated_at: new Date().toISOString() };
+
+  if (supabase) {
+    const request = id
+      ? supabase.from('products').update(payload).eq('id', id).is('blood_type', null)
+      : supabase.from('products').insert({ ...payload, id: `prod-${crypto.randomUUID()}`, blood_type: null });
+    const { data, error } = await request.select().single();
+    if (error) throw new Error(error.message);
+    await writeAuditLog(id ? 'product.updated' : 'product.created', 'product', data.id, { name, price: input.price });
+    return data as Product;
   }
 
   if (id) {
-    const updated = db.updateProduct(id, input as Partial<Product>);
-    await writeAuditLog('product.updated', 'product', id, { name: input.name, price: input.price });
-    return updated;
+    return db.updateProduct(id, { ...payload, blood_type: null });
   }
-  const created = db.addProduct({ ...input, created_at: new Date().toISOString() } as Omit<Product, 'id' | 'created_at'>);
-  await writeAuditLog('product.created', 'product', created.id, { name: input.name });
-  return created;
+  const types = db.getProductTypes();
+  const key = catalogProductKey(input.product_type_id, types.find((type) => type.id === input.product_type_id)?.name);
+  if (listCatalogProducts(db.getProducts(), types).some((product) =>
+    catalogProductKey(product.product_type_id, product.product_type_name) === key
+  )) {
+    throw new Error('This product type already has a listing.');
+  }
+  return db.addProduct({ ...payload, blood_type: null, stock_quantity: 0, availability: 'In Stock', active: true });
 }
 
 export async function setProductActive(product: Product, active: boolean): Promise<void> {
-  if (hasSupabaseSession()) {
-    const availability: Product['availability'] = active
-      ? product.stock_quantity > 0
-        ? 'In Stock'
-        : 'Out of Stock'
-      : 'Out of Stock';
-    const { error } = await supabase!
-      .from('products')
-      .update({ active, availability, updated_at: new Date().toISOString() })
-      .eq('id', product.id);
-    if (error && isMissingColumn(error)) {
-      const retry = await supabase!
-        .from('products')
-        .update({ availability, updated_at: new Date().toISOString() })
-        .eq('id', product.id);
-      if (retry.error) throw retry.error;
-    } else if (error) {
-      throw error;
-    }
-    await writeAuditLog(active ? 'product.activated' : 'product.deactivated', 'product', product.id, {
-      name: product.name,
-    });
-    return;
+  if (supabase) {
+    const { error } = await supabase.from('products')
+      .update({ active, updated_at: new Date().toISOString() })
+      .eq('id', product.id).is('blood_type', null).select('id').single();
+    if (error) throw new Error(error.message);
+  } else {
+    db.updateProduct(product.id, { active, blood_type: null });
   }
-  db.updateProduct(product.id, {
-    availability: active
-      ? product.stock_quantity > 0
-        ? 'In Stock'
-        : 'Out of Stock'
-      : 'Out of Stock',
-    ...(active ? {} : {}),
-  });
-  await writeAuditLog(active ? 'product.activated' : 'product.deactivated', 'product', product.id, {
-    name: product.name,
-  });
+  await writeAuditLog(active ? 'product.activated' : 'product.deactivated', 'product', product.id, { name: product.name });
 }
 
 export async function fetchProductTypes(): Promise<ProductTypeItem[]> {

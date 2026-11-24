@@ -246,9 +246,9 @@ const dict = {
     'products.saved': 'Product saved',
     'products.activated': 'Product activated',
     'products.deactivated': 'Product deactivated',
-    'products.priceWarn': 'Changing prices affects the customer storefront immediately.',
+    'products.priceWarn': 'Saved prices appear on the storefront within 30 seconds while it is open.',
     'products.migrationBanner':
-      'Products have no active flag in the current schema. Activate/deactivate maps to availability "Out of Stock" until migration 002 is applied.',
+      'Apply database migration 004 to edit or publish sourcing listings.',
     'products.nameRequired': 'Product name is required',
     'products.priceInvalid': 'Price must be zero or greater',
 
@@ -683,9 +683,9 @@ const dict = {
     'products.saved': 'تم حفظ المنتج',
     'products.activated': 'تم تفعيل المنتج',
     'products.deactivated': 'تم تعطيل المنتج',
-    'products.priceWarn': 'تغيير السعر يؤثر على موقع العملاء فوراً.',
+    'products.priceWarn': 'تظهر الأسعار المحفوظة على موقع العملاء خلال ٣٠ ثانية إذا كان مفتوحًا.',
     'products.migrationBanner':
-      'لا يوجد حقل تفعيل للمنتجات في المخطط الحالي. يتم ربط التفعيل/التعطيل بحالة "غير متوفر" حتى تطبيق الترحيل 002.',
+      'طبّق ترحيل قاعدة البيانات 004 لتعديل أو نشر قوائم توفير المنتجات.',
     'products.nameRequired': 'اسم المنتج مطلوب',
     'products.priceInvalid': 'يجب أن يكون السعر صفراً أو أكثر',
 

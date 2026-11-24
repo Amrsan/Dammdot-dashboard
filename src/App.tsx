@@ -63,9 +63,6 @@ export default function App() {
   const [recoveryEmail, setRecoveryEmail] = useState<string>('');
   const [recoveryCode, setRecoveryCode] = useState<string>('');
   const [lastSubmittedOrder, setLastSubmittedOrder] = useState<Order | null>(null);
-  const [selectedProductIdForOrder, setSelectedProductIdForOrder] = useState<string | undefined>(
-    undefined
-  );
   const [pendingRouteAfterAuth, setPendingRouteAfterAuth] = useState<{
     route: string;
     params?: any;
@@ -313,7 +310,6 @@ export default function App() {
   };
 
   const handleOrderNow = () => {
-    setSelectedProductIdForOrder(undefined);
     navigateTo('/select-product');
   };
 
@@ -329,12 +325,10 @@ export default function App() {
       return;
     }
 
-    setSelectedProductIdForOrder(product.id);
     navigateTo('/order', { productId: product.id });
   };
 
   const handleReorder = (previousOrder: Order) => {
-    setSelectedProductIdForOrder(previousOrder.product_id);
     navigateTo('/order', {
       productId: previousOrder.product_id,
       patientAge: previousOrder.patient_age,
@@ -399,7 +393,8 @@ export default function App() {
 
         {currentRoute === '/order' && (
           <MultiStepOrderFlow
-            initialProductId={selectedProductIdForOrder || routeParams.productId}
+            initialProductId={routeParams.productId}
+            initialBloodType={routeParams.bloodType}
             initialCategory={routeParams.category}
             onOrderCompleted={handleOrderCompleted}
             onNavigateProducts={() => navigateTo('/products')}
